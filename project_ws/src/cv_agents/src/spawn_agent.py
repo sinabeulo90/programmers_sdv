@@ -152,14 +152,14 @@ def get_traj_msg(paths, opt_ind, traj_x, traj_y, maps):
         m.header.stamp = rospy.Time.now()
         m.id = (id + 1) * 10
         m.type = m.POINTS
-        m.lifetime.nsecs = 10
+        m.lifetime.secs = 1
 
 
         c = ColorRGBA()
         if opt_ind == id:
-            m.scale.x = 1.0
-            m.scale.y = 1.0
-            m.scale.z = 1.0
+            m.scale.x = 0.5
+            m.scale.y = 0.5
+            m.scale.z = 0.5
             c.r = 0 / 255.0
             c.g = 0 / 255.0
             c.b = 255 / 255.0
@@ -171,7 +171,7 @@ def get_traj_msg(paths, opt_ind, traj_x, traj_y, maps):
             c.r = 255 / 255.0
             c.g = 0 / 255.0
             c.b = 0 / 255.0
-            c.a = 0.3
+            c.a = 0.2
 
         for x, y in zip(path.x, path.y):
             p = Point()
@@ -274,21 +274,21 @@ if __name__ == "__main__":
         traj_yaw[i] = sd[0]
 
     # 자차량 관련 initial condition
-    v = 0.1
+    v = state.v
     a = 0
     s, d = get_frenet(state.x, state.y, traj_x, traj_y);
 
     # s 방향 초기조건
     si = s
-    si_d = v*np.cos(state.yaw)
-    si_dd = a*np.cos(state.yaw)
+    si_d = v * np.cos(state.yaw)
+    si_dd = a * np.cos(state.yaw)
     sf_d = target_speed
     sf_dd = 0
 
     # d 방향 초기조건
     di = d
-    di_d = v*np.sin(state.yaw)
-    di_dd = a*np.sin(state.yaw)
+    di_d = v * np.sin(state.yaw)
+    di_dd = a * np.sin(state.yaw)
     df_d = 0
     df_dd = 0
 
@@ -304,20 +304,11 @@ if __name__ == "__main__":
         path, opt_ind = frenet_optimal_planning(si, si_d, si_dd,
                                                 sf_d, sf_dd, di, di_d, di_dd, df_d, df_dd, obs, traj_x, traj_y, traj_yaw, opt_d)
 
-        '''
-        다음 시뮬레이션 step 에서 사용할 initial condition update.
-        본 파트에서는 planning 만 수행하고 control 은 따로 수행하지 않으므로,
-        optimal trajectory 중 현재 위치에서 한개 뒤 index 를 다음 step 의 초기초건으로 사용.
-        '''
-        si_d = path[opt_ind].s_d[1]
-        si_dd = path[opt_ind].s_dd[1]
-        di_d = path[opt_ind].d_d[1]
-        di_dd = path[opt_ind].d_dd[1]
-
-        # consistency cost를 위해 update
-        opt_d = path[opt_ind].d[-1]
 
         # generate acceleration ai, and steering di
+        s_d, d_d = path[opt_ind].s_d[0], path[opt_ind].d_d[0]
+        target_speed = np.sqrt(s_d**2 + d_d**2)
+
         speed_error = target_speed - state.v
         ai = 0.5 * speed_error
         di = stanley_control(state.x, state.y, state.yaw, state.v, path[opt_ind].x, path[opt_ind].y, path[opt_ind].yaw)
@@ -325,7 +316,19 @@ if __name__ == "__main__":
         # update state with acc, delta
         state.update(ai, di)
 
+        '''
+        다음 시뮬레이션 step 에서 사용할 initial condition update.
+        본 파트에서는 planning 만 수행하고 control 은 따로 수행하지 않으므로,
+        optimal trajectory 중 현재 위치에서 한개 뒤 index 를 다음 step 의 초기초건으로 사용.
+        '''
         si, di = get_frenet(state.x, state.y, traj_x, traj_y)
+        si_d = path[opt_ind].s_d[1]
+        si_dd = path[opt_ind].s_dd[1]
+        di_d = path[opt_ind].d_d[1]
+        di_dd = path[opt_ind].d_dd[1]
+
+        # consistency cost를 위해 update
+        opt_d = path[opt_ind].d[-1]
 
         # vehicle state --> topic msg
         msg = get_ros_msg(state.x, state.y, state.yaw, state.v, id=id)
